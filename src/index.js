@@ -22,7 +22,7 @@ export function defaultMemoize(func, equalityCheck = defaultEqualityCheck) {
   let lastArgs = null
   let lastResult = null
   // we reference arguments instead of spreading them for performance reasons
-  return function () {
+  function memoizedFN() {
     if (!areArgumentsShallowlyEqual(equalityCheck, lastArgs, arguments)) {
       // apply arguments instead of spreading for performance.
       lastResult = func.apply(null, arguments)
@@ -31,6 +31,13 @@ export function defaultMemoize(func, equalityCheck = defaultEqualityCheck) {
     lastArgs = arguments
     return lastResult
   }
+
+  memoizedFN.cleanup = function cleanupMemoizedFNReferenceCylces() {
+    lastArgs = null
+    lastResult = null
+  }
+
+  return memoizedFN
 }
 
 function getDependencies(funcs) {
@@ -81,6 +88,27 @@ export function createSelectorCreator(memoize, ...memoizeOptions) {
     selector.resultFunc = resultFunc
     selector.recomputations = () => recomputations
     selector.resetRecomputations = () => recomputations = 0
+
+    const selectorCleanup = selector.cleanup
+
+    selector.cleanup = () => {
+      if (typeof memoizedResultFunc.cleanup === 'function') {
+        memoizedResultFunc.cleanup()
+      }
+
+      // allow nested selectors to be cleaned up if they have their own caching
+      // which could contain reference cycles
+      const length = dependencies.length
+      for (let i =0; i < length; i++) {
+        const dep = dependencies[i]
+        if (typeof dep.cleanup === 'function') {
+          dep.cleanup()
+        }
+      }
+
+      selectorCleanup()
+    }
+
     return selector
   }
 }
